@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { PresentationData, GenerationStep } from './types';
 import { generateOutline, generatePresentationFromOutline } from './services/geminiService';
+import { exportToPptx } from './services/pptService';
 import Slide from './components/Slide';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Play, Loader2, Sparkles, MonitorPlay, ListOrdered, Plus, Trash2, ArrowRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Play, Loader2, Sparkles, MonitorPlay, ListOrdered, Plus, Trash2, ArrowRight, Download } from 'lucide-react';
 
 const App: React.FC = () => {
   const [currentStep, setCurrentStep] = useState<GenerationStep>('input');
@@ -12,6 +13,7 @@ const App: React.FC = () => {
   const [presentation, setPresentation] = useState<PresentationData | null>(null);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   // --- Step 1: Generate Outline ---
   const handleGenerateOutline = async () => {
@@ -65,6 +67,19 @@ const App: React.FC = () => {
     }
   };
 
+  const handleExport = async () => {
+    if (!presentation) return;
+    setIsExporting(true);
+    try {
+      await exportToPptx(presentation);
+    } catch (e) {
+      console.error("Export failed", e);
+      setError("导出 PPT 失败，请稍后重试。");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const nextSlide = () => {
     if (presentation && currentSlideIndex < presentation.slides.length - 1) {
       setCurrentSlideIndex(prev => prev + 1);
@@ -104,18 +119,30 @@ const App: React.FC = () => {
             GenAI 演示文稿生成器
           </h1>
         </div>
-        {currentStep !== 'input' && (
-           <button 
-             onClick={() => {
-               setPresentation(null);
-               setOutline([]);
-               setCurrentStep('input');
-             }}
-             className="text-sm text-slate-400 hover:text-white transition-colors"
-           >
-             重新开始
-           </button>
-        )}
+        <div className="flex items-center gap-4">
+          {currentStep === 'viewing' && presentation && (
+            <button
+              onClick={handleExport}
+              disabled={isExporting}
+              className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+            >
+              {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              {isExporting ? '导出中...' : '导出 PPT'}
+            </button>
+          )}
+          {currentStep !== 'input' && (
+             <button 
+               onClick={() => {
+                 setPresentation(null);
+                 setOutline([]);
+                 setCurrentStep('input');
+               }}
+               className="text-sm text-slate-400 hover:text-white transition-colors"
+             >
+               重新开始
+             </button>
+          )}
+        </div>
       </header>
 
       <main className="flex-grow flex flex-col items-center justify-center p-4 relative overflow-hidden">
