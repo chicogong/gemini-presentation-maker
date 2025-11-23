@@ -10,6 +10,14 @@
       body {
         font-family: 'Inter', sans-serif;
       }
+      /* Ensure the hidden video stage doesn't interfere with scroll or layout */
+      #video-stage-container {
+        position: fixed;
+        left: -9999px;
+        top: 0;
+        z-index: -100;
+        visibility: hidden; /* We toggle this to visible but off-screen during capture if needed, or rely on html2canvas handling hidden elements */
+      }
     </style>
   <script type="importmap">
 {
@@ -20,7 +28,8 @@
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
     "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
     "framer-motion": "https://aistudiocdn.com/framer-motion@^12.23.24",
-    "pptxgenjs": "https://aistudiocdn.com/pptxgenjs@^3.12.0"
+    "pptxgenjs": "https://aistudiocdn.com/pptxgenjs@^3.12.0",
+    "html2canvas": "https://aistudiocdn.com/html2canvas@^1.4.1"
   }
 }
 </script>

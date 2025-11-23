@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PresentationData, GenerationStep } from './types';
 import { generateOutline, generatePresentationFromOutline } from './services/geminiService';
 import { exportToPptx } from './services/pptService';
+import { generateVideoFromFrames } from './services/videoService';
 import Slide from './components/Slide';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Play, Loader2, Sparkles, MonitorPlay, ListOrdered, Plus, Trash2, ArrowRight, Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Sparkles, Plus, Trash2, ArrowRight, Download, Video, Film } from 'lucide-react';
+import html2canvas from 'html2canvas';
 
 const App: React.FC = () => {
   const [currentStep, setCurrentStep] = useState<GenerationStep>('input');
@@ -14,6 +16,12 @@ const App: React.FC = () => {
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  
+  // Video Export State
+  const [isVideoExporting, setIsVideoExporting] = useState(false);
+  const [videoExportProgress, setVideoExportProgress] = useState(0); // 0 to 100
+  const [exportStageIndex, setExportStageIndex] = useState<number | null>(null);
+  const exportStageRef = useRef<HTMLDivElement>(null);
 
   // --- Step 1: Generate Outline ---
   const handleGenerateOutline = async () => {
@@ -67,7 +75,8 @@ const App: React.FC = () => {
     }
   };
 
-  const handleExport = async () => {
+  // --- Export Handlers ---
+  const handleExportPPT = async () => {
     if (!presentation) return;
     setIsExporting(true);
     try {
@@ -77,6 +86,65 @@ const App: React.FC = () => {
       setError("导出 PPT 失败，请稍后重试。");
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleExportVideo = async () => {
+    if (!presentation || isVideoExporting) return;
+    
+    setIsVideoExporting(true);
+    setVideoExportProgress(0);
+    setError(null);
+
+    const frames: HTMLCanvasElement[] = [];
+    const totalSlides = presentation.slides.length;
+
+    try {
+      // 1. Capture frames
+      for (let i = 0; i < totalSlides; i++) {
+        setExportStageIndex(i);
+        setVideoExportProgress(Math.round(((i) / totalSlides) * 50)); // First 50% is capturing
+        
+        // Wait for React to render the slide and image to load
+        // Use a simple delay to ensure images (picsum) are fetched and rendered
+        await new Promise(resolve => setTimeout(resolve, 1500)); 
+
+        if (exportStageRef.current) {
+          const canvas = await html2canvas(exportStageRef.current, {
+            useCORS: true, // Important for picsum images
+            scale: 1, // We are already at 1920x1080 in the stage
+            backgroundColor: null,
+            logging: false
+          });
+          frames.push(canvas);
+        }
+      }
+
+      setExportStageIndex(null); // Hide stage
+      setVideoExportProgress(60);
+
+      // 2. Generate Video
+      const videoBlob = await generateVideoFromFrames(frames, 3000); // 3 seconds per slide
+      setVideoExportProgress(90);
+
+      // 3. Download
+      const url = URL.createObjectURL(videoBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${presentation.topic.replace(/[^a-z0-9]/gi, '_').substring(0, 20)}_Presentation.webm`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      setVideoExportProgress(100);
+      setTimeout(() => setIsVideoExporting(false), 1000);
+
+    } catch (e) {
+      console.error("Video export failed", e);
+      setError("导出视频失败，请确保网络通畅（用于加载图片）。");
+      setIsVideoExporting(false);
+      setExportStageIndex(null);
     }
   };
 
@@ -111,33 +179,76 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500/30">
       
+      {/* Hidden Stage for Video Export (Fixed 1080p resolution) */}
+      <div 
+        style={{ 
+          position: 'fixed', 
+          top: 0, 
+          left: exportStageIndex !== null ? 0 : '-9999px', // Move off-screen when not in use
+          width: '1920px', 
+          height: '1080px',
+          zIndex: -50,
+          visibility: exportStageIndex !== null ? 'visible' : 'hidden' 
+        }}
+      >
+        <div ref={exportStageRef} className="w-full h-full bg-slate-900">
+           {presentation && exportStageIndex !== null && (
+             // Force key change to ensure fresh mount/animation reset
+             <Slide 
+               key={`export-${exportStageIndex}`}
+               data={presentation.slides[exportStageIndex]} 
+               index={exportStageIndex} 
+               total={presentation.slides.length} 
+             />
+           )}
+        </div>
+      </div>
+
       {/* Header */}
       <header className="p-6 border-b border-white/10 flex justify-between items-center bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
-        <div className="flex items-center gap-2" onClick={() => setCurrentStep('input')}>
+        <div className="flex items-center gap-2" onClick={() => !isVideoExporting && setCurrentStep('input')}>
           <Sparkles className="text-indigo-400 w-6 h-6" />
-          <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-pink-400 cursor-pointer">
+          <h1 className={`text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-pink-400 ${!isVideoExporting ? 'cursor-pointer' : ''}`}>
             GenAI 演示文稿生成器
           </h1>
         </div>
-        <div className="flex items-center gap-4">
-          {currentStep === 'viewing' && presentation && (
-            <button
-              onClick={handleExport}
-              disabled={isExporting}
-              className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-            >
-              {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-              {isExporting ? '导出中...' : '导出 PPT'}
-            </button>
+        <div className="flex items-center gap-3">
+          {currentStep === 'viewing' && presentation && !isVideoExporting && (
+            <>
+              <button
+                onClick={handleExportPPT}
+                disabled={isExporting}
+                className="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-slate-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 border border-white/5"
+              >
+                {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                {isExporting ? '导出中...' : '导出 PPT'}
+              </button>
+              
+              <button
+                onClick={handleExportVideo}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-indigo-900/20"
+              >
+                <Film className="w-4 h-4" />
+                导出视频
+              </button>
+            </>
           )}
-          {currentStep !== 'input' && (
+
+          {isVideoExporting && (
+            <div className="flex items-center gap-3 bg-indigo-900/50 px-4 py-2 rounded-lg border border-indigo-500/30">
+              <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
+              <span className="text-sm text-indigo-200">正在生成视频... {videoExportProgress}%</span>
+            </div>
+          )}
+
+          {currentStep !== 'input' && !isVideoExporting && (
              <button 
                onClick={() => {
                  setPresentation(null);
                  setOutline([]);
                  setCurrentStep('input');
                }}
-               className="text-sm text-slate-400 hover:text-white transition-colors"
+               className="text-sm text-slate-400 hover:text-white transition-colors ml-2"
              >
                重新开始
              </button>
@@ -319,7 +430,7 @@ const App: React.FC = () => {
               <div className="flex items-center gap-8 bg-slate-900/80 px-8 py-4 rounded-full border border-white/10 backdrop-blur-md shadow-2xl">
                 <button
                   onClick={prevSlide}
-                  disabled={currentSlideIndex === 0}
+                  disabled={currentSlideIndex === 0 || isVideoExporting}
                   className="p-2 hover:bg-white/10 rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   <ChevronLeft className="w-6 h-6" />
@@ -339,7 +450,7 @@ const App: React.FC = () => {
 
                 <button
                   onClick={nextSlide}
-                  disabled={currentSlideIndex === presentation.slides.length - 1}
+                  disabled={currentSlideIndex === presentation.slides.length - 1 || isVideoExporting}
                   className="p-2 hover:bg-white/10 rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   <ChevronRight className="w-6 h-6" />
