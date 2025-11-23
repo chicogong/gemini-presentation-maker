@@ -1,0 +1,5 @@
+{
+  "name": "GenAI 演示文稿制作工具",
+  "description": "基于 AI 的演示文稿生成器，使用 Google Gemini API 创建关于 Gemini Pro、Antigravity 和 AI Studio 的可视化幻灯片。",
+  "requestFramePermissions": []
+}
