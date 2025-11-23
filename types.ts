@@ -19,6 +19,8 @@ export interface PresentationData {
   slides: SlideData[];
 }
 
+export type GenerationStep = 'input' | 'generating_outline' | 'outline_review' | 'generating_slides' | 'viewing';
+
 export interface GenerationStatus {
   isGenerating: boolean;
   message: string;

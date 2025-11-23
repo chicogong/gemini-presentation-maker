@@ -2,32 +2,79 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { PresentationData, SlideLayout } from "../types";
 
 // Initialize the client
-// API Key is strictly from process.env.API_KEY per guidelines
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const modelId = "gemini-2.5-flash";
 
-export const generatePresentation = async (topic: string): Promise<PresentationData> => {
-  const modelId = "gemini-2.5-flash"; // Efficient for structured text generation
-
+/**
+ * Step 1: Generate an outline (list of slide titles) based on the topic.
+ */
+export const generateOutline = async (topic: string): Promise<string[]> => {
   const prompt = `
-    Create a professional, engaging presentation slide deck about the following topic: "${topic}".
-    The presentation should have 5-8 slides.
+    Create a logical, professional presentation outline for the topic: "${topic}".
+    Target Audience: General tech audience.
     Language: Chinese (Simplified).
-    Structure the content to be educational and visually descriptive.
     
-    For "Gemini Pro", "Antigravity", and "AI Studio", ensure accurate technical details:
-    - Gemini Pro: Google's mid-size multimodal model.
-    - Antigravity: Often refers to the Python SDK project name or the 'google-generativeai' library context.
-    - AI Studio: The web-based prototyping environment.
-
-    Ensure a mix of layouts.
-    Output MUST be in Chinese.
+    Return a list of 6-9 slide titles. 
+    The first slide should usually be an Introduction/Title concept.
+    The last slide should be a Conclusion/Summary concept.
+    
+    For technical topics like "Gemini Pro", "Antigravity", "AI Studio", ensure the flow is logical (e.g., What is it -> Features -> Usage -> Summary).
   `;
 
   const response = await ai.models.generateContent({
     model: modelId,
     contents: prompt,
     config: {
-      systemInstruction: "You are a world-class presentation designer and technical writer. Output strictly in Chinese (Simplified).",
+      systemInstruction: "You are a senior content strategist. Output strictly in Chinese (Simplified).",
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: "A list of slide titles representing the outline"
+      }
+    }
+  });
+
+  const text = response.text;
+  if (!text) throw new Error("No outline generated");
+
+  try {
+    return JSON.parse(text) as string[];
+  } catch (e) {
+    console.error("Failed to parse outline", e);
+    throw new Error("Failed to parse outline data");
+  }
+};
+
+/**
+ * Step 2: Generate the full presentation based on the approved outline.
+ */
+export const generatePresentationFromOutline = async (topic: string, outline: string[]): Promise<PresentationData> => {
+  
+  const prompt = `
+    Create a detailed presentation based STRICTLY on the following outline of slide titles:
+    ${JSON.stringify(outline)}
+
+    Topic: "${topic}"
+    Language: Chinese (Simplified).
+    
+    Instructions:
+    1. For each title in the outline, create one slide.
+    2. Choose the most appropriate layout for the content (Use 'TITLE' only for the first slide usually).
+    3. Generate rich, educational content (bullet points or paragraphs).
+    4. Provide an English image description for finding a stock photo.
+    
+    Special Context:
+    - Gemini Pro: Google's mid-size multimodal model.
+    - Antigravity: Often refers to the Python SDK project name or the 'google-generativeai' library context.
+    - AI Studio: The web-based prototyping environment.
+  `;
+
+  const response = await ai.models.generateContent({
+    model: modelId,
+    contents: prompt,
+    config: {
+      systemInstruction: "You are a world-class presentation designer. Output strictly in Chinese (Simplified).",
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -57,7 +104,7 @@ export const generatePresentation = async (topic: string): Promise<PresentationD
                 },
                 imageDescription: {
                   type: Type.STRING,
-                  description: "A short visual description of an image that would fit this slide (in English for better image generation results)."
+                  description: "A short visual description of an image (in English)."
                 }
               },
               required: ["title", "content", "layout"]
@@ -70,13 +117,10 @@ export const generatePresentation = async (topic: string): Promise<PresentationD
   });
 
   const text = response.text;
-  if (!text) {
-    throw new Error("No response text generated");
-  }
+  if (!text) throw new Error("No response text generated");
 
   try {
-    const data = JSON.parse(text) as PresentationData;
-    return data;
+    return JSON.parse(text) as PresentationData;
   } catch (e) {
     console.error("Failed to parse JSON", e);
     throw new Error("Failed to parse presentation data");
